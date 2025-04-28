@@ -5,40 +5,41 @@ import (
 	"time"
 )
 
-func fixedCtx(branch string, tags []string) BuildContext {
+var now = time.Date(2025, 4, 28, 15, 0, 0, 0, time.UTC)
+
+func ctx(branch string, cfg Config, tags []string) BuildContext {
 	return BuildContext{
-		Branch:              branch,
-		PipelineID:          "123",
-		Time:                time.Date(2025, 4, 28, 10, 0, 0, 0, time.UTC),
-		LookupTagsFn:        func() ([]string, error) { return tags, nil },
-		LookupMergesTodayFn: func(_ time.Time) (int, error) { return 5, nil },
+		Branch:     branch,
+		PipelineID: "321",
+		Time:       now,
+		Config:     cfg,
+		LookupTags: func() ([]string, error) { return tags, nil },
 	}
 }
 
-func TestFeatureSnapshot(t *testing.T) {
-	ctx := fixedCtx("feat/awesome", []string{"2025.04.27.3"})
-	got, _ := ctx.Version()
-	want := "2025.04.27.3.123-SNAPSHOT"
+func TestDefaultBranch(t *testing.T) {
+	got, _ := ctx("main", Config{DefaultBranch: "main"}, nil).Version()
+	want := "2025.04.28.321"
 	if got != want {
-		t.Fatalf("want %s, got %s", want, got)
+		t.Fatalf("got %s want %s", got, want)
 	}
 }
 
-func TestMasterRCIncrement(t *testing.T) {
-	ctx := fixedCtx("master",
-		[]string{"2025.04.28.5-RC1"})
-	got, _ := ctx.Version()
-	want := "2025.04.28.5-RC2"
+func TestFeatureWithSuffixAndPrefix(t *testing.T) {
+	tags := []string{"2025.04.27.17"}
+	cfg := Config{DefaultBranch: "main", FeatureSuffix: "SNAPSHOT", Prefix: "cli"}
+	got, _ := ctx("feat/pay", cfg, tags).Version()
+	want := "cli-2025.04.27.17.321-SNAPSHOT"
 	if got != want {
-		t.Fatalf("want %s, got %s", want, got)
+		t.Fatalf("got %s want %s", got, want)
 	}
 }
 
 func TestReleasePatch(t *testing.T) {
-	ctx := fixedCtx("release/v2025.04.28.5.1", nil)
-	got, _ := ctx.Version()
-	want := "2025.04.28.5.2"
+	tags := []string{"2025.04.28.100", "2025.04.28.100.1"}
+	got, _ := ctx("release/v2025.04.28.100", Config{DefaultBranch: "main"}, tags).Version()
+	want := "2025.04.28.100.2"
 	if got != want {
-		t.Fatalf("want %s, got %s", want, got)
+		t.Fatalf("got %s want %s", got, want)
 	}
 }
