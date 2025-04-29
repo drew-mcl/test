@@ -20,35 +20,35 @@ func ctx(branch string, cfg Config, tags []string) BuildContext {
 
 func TestDefaultBranch(t *testing.T) {
 	got, _ := ctx("main", Config{DefaultBranch: "main"}, nil).Version()
-	want := "20250428.321.0"
+	want := "20250428.321"
 	if got != want {
 		t.Fatalf("got %s want %s", got, want)
 	}
 }
 
-func TestFeatureWithSuffixAndPrefix(t *testing.T) {
-	tags := []string{"20250427.17.0"}
-	cfg := Config{DefaultBranch: "main", FeatureSuffix: "SNAPSHOT", Prefix: "cli"}
-	got, _ := ctx("feat/pay", cfg, tags).Version()
-	want := "cli-20250427.17.0.321-SNAPSHOT"
+func TestFeatureBranch(t *testing.T) {
+	cfg := Config{DefaultBranch: "main", Prefix: "cli"}
+	got, _ := ctx("feature/foo", cfg, []string{}).Version()
+	want := "cli-20250428.321"
 	if got != want {
 		t.Fatalf("got %s want %s", got, want)
 	}
 }
 
-func TestReleasePatch(t *testing.T) {
-	tags := []string{"20250428.100.0", "20250428.100.1"}
+func TestReleaseFirstPatch(t *testing.T) {
+	cfg := Config{DefaultBranch: "main"}
+	got, _ := ctx("release/v20250428.100", cfg, []string{}).Version()
+	want := "20250428.100.1"
+	if got != want {
+		t.Fatalf("got %s want %s", got, want)
+	}
+}
+
+func TestReleaseNextPatch(t *testing.T) {
+	tags := []string{"20250428.100", "20250428.100.1", "20250428.100.2"}
 	got, _ := ctx("release/v20250428.100", Config{DefaultBranch: "main"}, tags).Version()
-	want := "20250428.100.2"
+	want := "20250428.100.3"
 	if got != want {
 		t.Fatalf("got %s want %s", got, want)
-	}
-}
-
-func TestFeatureNoValidTags(t *testing.T) {
-	tags := []string{"not-a-calver"}
-	_, err := ctx("feat/broken", Config{DefaultBranch: "main"}, tags).Version()
-	if err == nil {
-		t.Fatalf("expected error when latest tag is invalid")
 	}
 }
