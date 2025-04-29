@@ -1,4 +1,3 @@
-// versioner_test.go
 package versioner
 
 import (
@@ -26,28 +25,41 @@ func TestDefaultBranch(t *testing.T) {
 	}
 }
 
-func TestFeatureBranch(t *testing.T) {
-	cfg := Config{DefaultBranch: "main", Prefix: "cli"}
-	got, _ := ctx("feature/foo", cfg, []string{}).Version()
-	want := "cli-20250428.321"
+func TestFeatureBranchWithSuffixAndPrefix(t *testing.T) {
+	cfg := Config{
+		DefaultBranch: "main",
+		FeatureSuffix: "SNAPSHOT",
+		Prefix:        "cli",
+	}
+	got, _ := ctx("feat/payments", cfg, nil).Version()
+	want := "cli-20250428.321-SNAPSHOT"
 	if got != want {
 		t.Fatalf("got %s want %s", got, want)
 	}
 }
 
-func TestReleaseFirstPatch(t *testing.T) {
-	cfg := Config{DefaultBranch: "main"}
-	got, _ := ctx("release/v20250428.100", cfg, []string{}).Version()
+func TestFeatureBranchNoSuffix(t *testing.T) {
+	got, _ := ctx("feat/clean", Config{DefaultBranch: "main"}, nil).Version()
+	want := "20250428.321"
+	if got != want {
+		t.Fatalf("got %s want %s", got, want)
+	}
+}
+
+func TestReleaseBranchFirstPatch(t *testing.T) {
+	// no existing patch tags
+	tags := []string{"20250428.100"}
+	got, _ := ctx("release/v20250428.100", Config{DefaultBranch: "main"}, tags).Version()
 	want := "20250428.100.1"
 	if got != want {
 		t.Fatalf("got %s want %s", got, want)
 	}
 }
 
-func TestReleaseNextPatch(t *testing.T) {
-	tags := []string{"20250428.100", "20250428.100.1", "20250428.100.2"}
+func TestReleaseBranchSubsequentPatch(t *testing.T) {
+	tags := []string{"20250428.100", "20250428.100.1"}
 	got, _ := ctx("release/v20250428.100", Config{DefaultBranch: "main"}, tags).Version()
-	want := "20250428.100.3"
+	want := "20250428.100.2"
 	if got != want {
 		t.Fatalf("got %s want %s", got, want)
 	}

@@ -1,12 +1,12 @@
-// versioner.go
 // Package versioner produces deterministic CalVer strings for GitLab pipelines.
 //
-// ─ Default branch  → YYYYMMDD.<PipelineID>
-// ─ Feature branch  → [<Prefix>-]YYYYMMDD.<PipelineID>
-// ─ Release branch  → [<Prefix>-]<BaseTag>.<NextPatch>
+// ─  Default-branch  → YYYYMMDD.<PipelineID>
+// ─  Feature branch  → [<Prefix>-]YYYYMMDD.<PipelineID>[-<Suffix>]
+// ─  Release branch  → [<Prefix>-]<BaseTag>.<NextPatch>
 //
-// BaseTag syntax must be YYYYMMDD.<PipelineID>; release branch name must be
-// release/v<BaseTag>. NextPatch starts at 1 and auto-increments.
+//   - BaseTag syntax: YYYYMMDD.<PipelineID>
+//   - Release branch name:  release/v<baseTag>
+//   - NextPatch starts at 1 and auto-increments.
 package versioner
 
 import (
@@ -18,13 +18,14 @@ import (
 	"time"
 )
 
-// Config holds versioning settings.
+// ---------------- Public ---------------------------------------------------------------------------------------------
+
 type Config struct {
-	DefaultBranch string // "main", "master", …
-	Prefix        string // optional; prepended as '<prefix>-'
+	DefaultBranch string // "main", "master", "trunk" …
+	Prefix        string // optional; prepended with '<prefix>-'
+	FeatureSuffix string // optional; appended as '-<suffix>' on *feature* builds only
 }
 
-// BuildContext carries CI context for version generation.
 type BuildContext struct {
 	Branch     string    // CI_COMMIT_BRANCH
 	PipelineID string    // CI_PIPELINE_IID
@@ -36,27 +37,31 @@ type BuildContext struct {
 // Version returns the canonical version string or an error.
 func (c BuildContext) Version() (string, error) {
 	switch classify(c.Config.DefaultBranch, c.Branch) {
-	case typeDefault, typeFeature:
-		// Default & Feature share DATE.BUILD format
-		base := c.Time.Format("20060102") + "." + c.PipelineID
-		return addPrefix(base, c.Config.Prefix), nil
+
+	case typeDefault:
+		v := fmt.Sprintf("%s.%s", c.Time.Format("20060102"), c.PipelineID)
+		return addPrefix(v, c.Config.Prefix), nil
 
 	case typeRelease:
-		baseTag, next, err := nextPatch(c.Branch, c.LookupTags)
+		base, next, err := nextPatch(c.Branch, c.LookupTags)
 		if err != nil {
 			return "", err
 		}
-		v := fmt.Sprintf("%s.%d", baseTag, next)
+		v := fmt.Sprintf("%s.%d", base, next)
 		return addPrefix(v, c.Config.Prefix), nil
 
-	default:
-		// fallback
-		base := c.Time.Format("20060102") + "." + c.PipelineID
-		return addPrefix(base, c.Config.Prefix), nil
+	default: // feature / hot-fix
+		base := c.Time.Format("20060102")
+		v := fmt.Sprintf("%s.%s", base, c.PipelineID)
+		if suf := strings.TrimPrefix(c.Config.FeatureSuffix, "-"); suf != "" {
+			v += "-" + suf
+		}
+		return addPrefix(v, c.Config.Prefix), nil
 	}
 }
 
-// branchKind defines types of branches.
+// ---------------- Internals ------------------------------------------------------------------------------------------
+
 type branchKind int
 
 const (
@@ -65,7 +70,6 @@ const (
 	typeRelease
 )
 
-// classify categorizes the branch.
 func classify(def, br string) branchKind {
 	switch {
 	case br == def:
@@ -77,7 +81,6 @@ func classify(def, br string) branchKind {
 	}
 }
 
-// addPrefix applies the optional prefix.
 func addPrefix(v, p string) string {
 	if p == "" {
 		return v
@@ -85,10 +88,10 @@ func addPrefix(v, p string) string {
 	return strings.TrimSuffix(p, "-") + "-" + v
 }
 
-// relBranchRE matches release branches: release/vYYYYMMDD.<PipelineID>
+/* ---------- helpers for release branches ------------------------------------ */
+
 var relBranchRE = regexp.MustCompile(`^release/v(\d{8}\.\d+)$`)
 
-// nextPatch finds the next patch number for a given release branch.
 func nextPatch(br string, lookup func() ([]string, error)) (base string, patch int, err error) {
 	m := relBranchRE.FindStringSubmatch(br)
 	if len(m) != 2 {
@@ -97,13 +100,18 @@ func nextPatch(br string, lookup func() ([]string, error)) (base string, patch i
 	}
 	base = m[1]
 
-	ts, _ := lookup()
+	// graceful degradation if lookup is nil
+	var ts []string
+	if lookup != nil {
+		ts, _ = lookup()
+	}
+
 	max := 0
-	// match tags like BaseTag.N
-	re := regexp.MustCompile(`^` + regexp.QuoteMeta(base) + `\.(\d+)$`)
+	re := regexp.MustCompile(fmt.Sprintf(`^%s\.(\d+)$`, regexp.QuoteMeta(base)))
 	for _, t := range ts {
 		if mm := re.FindStringSubmatch(t); len(mm) == 2 {
-			if n, errA := strconv.Atoi(mm[1]); errA == nil && n > max {
+			n, _ := strconv.Atoi(mm[1])
+			if n > max {
 				max = n
 			}
 		}
@@ -112,7 +120,8 @@ func nextPatch(br string, lookup func() ([]string, error)) (base string, patch i
 	return
 }
 
-// GitTags returns git tags (stubbed in tests).
+/* ---------- default Git helpers (may be stubbed in tests) -------------------- */
+
 func GitTags() ([]string, error) {
 	out, err := exec.Command("git", "tag").CombinedOutput()
 	if err != nil {
